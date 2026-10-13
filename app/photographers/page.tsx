@@ -1,9 +1,12 @@
 import type { Metadata } from "next";
-import { Suspense } from "react";
 import Header from "@/components/header";
 import Footer from "@/components/footer";
 import ListingClient from "@/components/listing-client";
-import { getVendorsByCategory } from "@/lib/vendors";
+import { getVendorsByCategorySafe } from "@/lib/vendors";
+
+// Always fetch fresh at request time: a static build-time snapshot would go
+// stale (and could ship an empty list if Supabase hiccuped during deploy).
+export const dynamic = "force-dynamic";
 
 export const metadata: Metadata = {
   title: "Best Wedding Photographers in Kochi [2025] - Top 30 with Price & WhatsApp",
@@ -11,7 +14,15 @@ export const metadata: Metadata = {
 };
 
 export default async function PhotographersPage() {
-  const vendors = await getVendorsByCategory("photographer");
+  let vendors: Awaited<ReturnType<typeof getVendorsByCategorySafe>>["vendors"] = [];
+  let loadError: string | null = null;
+  try {
+    const res = await getVendorsByCategorySafe("photographer");
+    vendors = res.vendors;
+    loadError = res.error;
+  } catch (e) {
+    loadError = e instanceof Error ? `db-error: ${e.message}` : "db-error: unknown";
+  }
   return (
     <>
       <Header />
@@ -21,9 +32,12 @@ export default async function PhotographersPage() {
           Planning a Kochi wedding? Compare the top 30 verified wedding photographers in Ernakulam — candid storytellers in Kaloor, cinematic filmmakers in Fort Kochi, and budget-friendly traditional + candid teams in Edappally and Tripunithura. Every profile shows starting price, style, rating and a direct WhatsApp button so you can check your date in one tap. Prices updated for the 2025 season: expect ₹28k+ for single-day coverage and ₹55k+ for premium two-shooter cinematic packages.
         </p>
         <div className="mt-8">
-          <Suspense fallback={<div className="rounded-2xl border p-10 text-center text-sm text-neutral-500">Loading vendors…</div>}>
-            <ListingClient vendors={vendors} styles={["Candid", "Traditional", "Cinematic"]} basePath="/photographers" />
-          </Suspense>
+          <ListingClient
+            vendors={vendors}
+            styles={["Candid", "Traditional", "Cinematic"]}
+            basePath="/photographers"
+            loadError={loadError}
+          />
         </div>
       </main>
       <Footer />

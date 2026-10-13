@@ -268,26 +268,124 @@ export const DUMMY_VENDORS: Vendor[] = [
   }
 ];
 
-async function fromDb(): Promise<Vendor[] | null> {
-  if (!isSupabaseConfigured || !supabase) return null;
+/** Normalize one DB row: trims strings, lowercases category, coerces numbers/arrays.
+ *  Protects listing pages against manually-added rows with 'Photographer',
+ *  trailing spaces, null galleries, or string-typed ratings. */
+function normalizeVendor(row: Record<string, unknown>): Vendor {
+  const rawCat = String(row.category ?? "").trim().toLowerCase();
+  const category: VendorCategory =
+    rawCat === "makeup_artist" || rawCat === "makeup-artist" || rawCat === "makeup artist"
+      ? "makeup_artist"
+      : "photographer";
+  const gallery = Array.isArray(row.gallery_images)
+    ? (row.gallery_images as unknown[]).map(String)
+    : [];
+  const priceRangeRaw = String(row.price_range ?? "").trim();
+  const price_range =
+    priceRangeRaw === "Under 25k" || priceRangeRaw === "25k-50k" || priceRangeRaw === "50k+"
+      ? (priceRangeRaw as Vendor["price_range"])
+      : category === "photographer"
+        ? ("25k-50k" as const)
+        : ("Under 25k" as const);
+  return {
+    id: String(row.id ?? ""),
+    name: String(row.name ?? "Unnamed vendor"),
+    slug: String(row.slug ?? ""),
+    category,
+    area: String(row.area ?? "").trim() || "Kochi",
+    starting_price: Number(row.starting_price) || 0,
+    price_range,
+    style: String(row.style ?? ""),
+    bio: String(row.bio ?? ""),
+    profile_image: String(row.profile_image ?? ""),
+    gallery_images: gallery,
+    instagram_url: String(row.instagram_url ?? ""),
+    whatsapp_number: String(row.whatsapp_number ?? ""),
+    rating: Number(row.rating) || 0,
+    review_count: Number(row.review_count) || 0,
+    is_featured: Boolean(row.is_featured),
+    is_verified: row.is_verified !== false,
+    created_at: row.created_at ? String(row.created_at) : undefined
+  };
+}
+
+function sortVendors(a: Vendor, b: Vendor) {
+  return Number(b.is_featured) - Number(a.is_featured) || b.rating - a.rating;
+}
+
+async function fromDb(category?: VendorCategory): Promise<{ vendors: Vendor[] | null; error: string | null }> {
+  if (!isSupabaseConfigured || !supabase) return { vendors: null, error: "Supabase env vars missing" };
   try {
-    const { data, error } = await supabase.from("vendors").select("*").order("is_featured", { ascending: false }).order("rating", { ascending: false });
-    if (error || !data || data.length === 0) return null;
-    return data as Vendor[];
-  } catch {
-    return null;
+    let query = supabase
+      .from("vendors")
+      .select("*")
+      .order("is_featured", { ascending: false })
+      .order("rating", { ascending: false });
+    if (category) query = query.eq("category", category);
+    const { data, error } = await query;
+    if (error) {
+      console.error(`[vendors] Supabase SELECT failed${category ? ` (category=${category})` : ""}:`, error.message);
+      return { vendors: null, error: error.message };
+    }
+    if (!data || data.length === 0) return { vendors: null, error: "empty" };
+    return { vendors: (data as Record<string, unknown>[]).map(normalizeVendor), error: null };
+  } catch (e) {
+    const msg = e instanceof Error ? e.message : "Unknown fetch error";
+    console.error("[vendors] Supabase fetch threw:", msg);
+    return { vendors: null, error: msg };
   }
 }
 
 export async function getAllVendors(): Promise<Vendor[]> {
-  const db = await fromDb();
-  if (db) return db;
-  return [...DUMMY_VENDORS].sort((a, b) => Number(b.is_featured) - Number(a.is_featured) || b.rating - a.rating);
+  const { vendors } = await fromDb();
+  if (vendors) return [...vendors].sort(sortVendors);
+  return [...DUMMY_VENDORS].sort(sortVendors);
 }
 
+export type CategoryResult = {
+  vendors: Vendor[];
+  /** null on success; otherwise a short machine-readable reason: 'db-error: ...' | 'rls-or-empty' | 'demo-fallback' */
+  error: string | null;
+  source: "db" | "demo";
+};
+
 export async function getVendorsByCategory(cat: VendorCategory): Promise<Vendor[]> {
-  const all = await getAllVendors();
-  return all.filter((v) => v.category === cat);
+  return (await getVendorsByCategorySafe(cat)).vendors;
+}
+
+/**
+ * Robust category fetch:
+ *  1. Direct DB query with exact .eq('category', cat) (uses idx_vendors_category).
+ *  2. Fallback: fetch all + case-insensitive match (catches 'Photographer', whitespace, etc).
+ *  3. Last resort: bundled demo vendors so the page NEVER renders empty on DB trouble
+ *     (error string explains why — surfaced in UI, not an infinite spinner).
+ */
+export async function getVendorsByCategorySafe(cat: VendorCategory): Promise<CategoryResult> {
+  const wanted = cat.trim().toLowerCase();
+
+  const direct = await fromDb(cat);
+  if (direct.vendors && direct.vendors.length > 0) {
+    return { vendors: [...direct.vendors].sort(sortVendors), error: null, source: "db" };
+  }
+
+  const all = await fromDb();
+  if (all.vendors && all.vendors.length > 0) {
+    const matched = all.vendors.filter((v) => v.category.trim().toLowerCase() === wanted);
+    if (matched.length > 0) {
+      console.warn(
+        `[vendors] Exact category query for '${cat}' returned 0 rows but ${matched.length} rows matched case-insensitively. Check category casing in Supabase.`
+      );
+      return { vendors: matched.sort(sortVendors), error: null, source: "db" };
+    }
+    // Table readable but genuinely has no rows for this category.
+    return { vendors: [], error: null, source: "db" };
+  }
+
+  // DB unreachable / RLS-blocked / table empty → demo fallback, never infinite loading.
+  const demo = DUMMY_VENDORS.filter((v) => v.category === cat).sort(sortVendors);
+  const reason = all.error && all.error !== "empty" ? `db-error: ${all.error}` : "rls-or-empty";
+  console.warn(`[vendors] Falling back to demo data for '${cat}' (${reason}).`);
+  return { vendors: demo, error: reason === "rls-or-empty" && direct.error ? `db-error: ${direct.error}` : reason, source: "demo" };
 }
 
 export async function getFeaturedVendors(limit = 6): Promise<Vendor[]> {

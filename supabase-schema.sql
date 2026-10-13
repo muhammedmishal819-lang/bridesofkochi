@@ -55,3 +55,17 @@ insert into vendors (name, slug, category, area, starting_price, price_range, st
 ('Lakme Leela Studio','lakme-leela-studio','makeup_artist','Kaloor',22000,'Under 25k','Airbrush, Natural','Studio in Kaloor with trial room. Christian, Hindu and Muslim bridal looks with custom lens + lash bar.','https://images.unsplash.com/photo-1522337660859-02fbefca4702?q=80&w=1200&auto=format&fit=crop',array['https://images.unsplash.com/photo-1610173826608-bd1f53a52db1?q=80&w=1200&auto=format&fit=crop','https://images.unsplash.com/photo-1487412947147-5cebf100ffc2?q=80&w=1200&auto=format&fit=crop','https://images.unsplash.com/photo-1520854221256-17451cc331bf?q=80&w=1200&auto=format&fit=crop'],'https://instagram.com/leelastudio.kaloor','9847112345',4.6,67,false,true),
 ('Serene Sona Makeovers','serene-sona-makeovers','makeup_artist','Tripunithura',30000,'25k-50k','HD, Natural, Airbrush','Luxury bridal makeovers with premium palettes. Groom styling add-on available.','https://images.unsplash.com/photo-1596704017254-9b121068fb31?q=80&w=1200&auto=format&fit=crop',array['https://images.unsplash.com/photo-1487412947147-5cebf100ffc2?q=80&w=1200&auto=format&fit=crop','https://images.unsplash.com/photo-1457972729786-0411a8b2b626?q=80&w=1200&auto=format&fit=crop','https://images.unsplash.com/photo-1610173826608-bd1f53a52db1?q=80&w=1200&auto=format&fit=crop'],'https://instagram.com/serenesona','9847123456',4.9,95,true,true)
 on conflict (slug) do nothing;
+
+-- ── DIAGNOSTIC: run these if /photographers or /makeup-artists show
+-- "Live database unavailable" or an empty list ─────────────────────
+-- 1. Is the public SELECT policy present and RLS behaving?
+--    select * from pg_policies where tablename = 'vendors';
+-- 2. Row counts per category (exact strings the app queries):
+--    select category, count(*) from vendors group by category;
+--    Expected: one row 'photographer' (6) and one 'makeup_artist' (6).
+--    Any other spelling ('Photographer', trailing space) is auto-fixed
+--    by the app, but clean it up anyway:
+--    update vendors set category = trim(lower(category));
+-- 3. If step 1 shows no SELECT policy, re-run just the policy block:
+--    drop policy if exists "public read" on vendors;
+--    create policy "public read" on vendors for select using (true);
