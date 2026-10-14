@@ -455,20 +455,38 @@ export async function fetchVendorsBrowser(cat: VendorCategory): Promise<Vendor[]
   const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
   const anon = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
   if (!url || !anon) throw new Error("Supabase env vars missing in browser");
-  const qs = new URLSearchParams({
+  const wanted = cat.trim().toLowerCase();
+  const baseQs = new URLSearchParams({
     select: "*",
     category: `eq.${cat}`,
     order: "is_featured.desc,rating.desc"
   });
-  const res = await fetch(`${url}/rest/v1/vendors?${qs.toString()}`, {
-    headers: { apikey: anon, Authorization: `Bearer ${anon}` },
-    signal: AbortSignal.timeout(10000)
-  });
-  if (!res.ok) throw new Error(`Supabase HTTP ${res.status}`);
-  const rows = (await res.json()) as Record<string, unknown>[];
-  const wanted = cat.trim().toLowerCase();
-  return rows
-    .map(normalizeVendor)
-    .filter((v) => v.category.trim().toLowerCase() === wanted)
-    .sort(sortVendors);
+  const endpoint = `${url}/rest/v1/vendors?${baseQs.toString()}`;
+  const parse = async (res: Response): Promise<Vendor[]> => {
+    if (!res.ok) throw new Error(`Supabase HTTP ${res.status}`);
+    const rows = (await res.json()) as Record<string, unknown>[];
+    return rows
+      .map(normalizeVendor)
+      .filter((v) => v.category.trim().toLowerCase() === wanted)
+      .sort(sortVendors);
+  };
+  // Attempt 1: header auth (clean, key stays out of URLs/logs).
+  try {
+    const res = await fetch(endpoint, {
+      headers: { apikey: anon, Authorization: `Bearer ${anon}` },
+      signal: AbortSignal.timeout(10000)
+    });
+    return await parse(res);
+  } catch (firstErr) {
+    // Attempt 2: key as URL param = plain GET, no CORS preflight.
+    // Survives networks/antivirus that block OPTIONS preflights.
+    try {
+      const res = await fetch(`${endpoint}&apikey=${encodeURIComponent(anon)}`, {
+        signal: AbortSignal.timeout(10000)
+      });
+      return await parse(res);
+    } catch {
+      throw firstErr instanceof Error ? firstErr : new Error(String(firstErr));
+    }
+  }
 }
