@@ -14,6 +14,9 @@ export async function GET() {
     host = "INVALID_URL_FORMAT";
   }
   return NextResponse.json({
+    build: process.env.VERCEL_GIT_COMMIT_SHA
+      ? process.env.VERCEL_GIT_COMMIT_SHA.slice(0, 7)
+      : "local-dev",
     supabaseConfigured: Boolean(url && anon && url.includes("supabase")),
     urlHost: host,
     urlStartsHttps: url.startsWith("https://"),
