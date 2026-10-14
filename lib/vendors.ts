@@ -313,13 +313,13 @@ function sortVendors(a: Vendor, b: Vendor) {
   return Number(b.is_featured) - Number(a.is_featured) || b.rating - a.rating;
 }
 
-async function fromDb(category?: VendorCategory): Promise<{ vendors: Vendor[] | null; error: string | null }> {
+async function fromDb(category?: VendorCategory, attempts = 2): Promise<{ vendors: Vendor[] | null; error: string | null }> {
   if (!isSupabaseConfigured || !supabase) return { vendors: null, error: "Supabase env vars missing" };
   const label = category ? ` (category=${category})` : "";
   // Retry transient Vercel↔Supabase network blips; surfaced cause codes
   // (ENOTFOUND/EAI_AGAIN = DNS, CONNECT_TIMEOUT = routing/firewall) tell us exactly why.
   let lastError = "unknown";
-  for (let attempt = 1; attempt <= 3; attempt++) {
+  for (let attempt = 1; attempt <= attempts; attempt++) {
     try {
       let query = supabase
         .from("vendors")
@@ -341,7 +341,7 @@ async function fromDb(category?: VendorCategory): Promise<{ vendors: Vendor[] | 
       lastError = `${e instanceof Error ? e.message : String(e)}${cause?.code ? ` [${cause.code}]` : ""}`;
       console.error(`[vendors] Supabase fetch attempt ${attempt}${label} threw:`, lastError);
     }
-    if (attempt < 3) await new Promise((r) => setTimeout(r, 400 * attempt * attempt));
+    if (attempt < attempts) await new Promise((r) => setTimeout(r, 400 * attempt * attempt));
   }
   return { vendors: null, error: lastError };
 }
@@ -373,12 +373,14 @@ export async function getVendorsByCategory(cat: VendorCategory): Promise<Vendor[
 export async function getVendorsByCategorySafe(cat: VendorCategory): Promise<CategoryResult> {
   const wanted = cat.trim().toLowerCase();
 
-  const direct = await fromDb(cat);
+  // Run both queries in parallel: worst case waits ~one query's timeouts,
+  // not the sum (keeps SSR fast even when the network is completely down).
+  const [direct, all] = await Promise.all([fromDb(cat, 2), fromDb(undefined, 1)]);
+
   if (direct.vendors && direct.vendors.length > 0) {
     return { vendors: [...direct.vendors].sort(sortVendors), error: null, source: "db" };
   }
 
-  const all = await fromDb();
   if (all.vendors && all.vendors.length > 0) {
     const matched = all.vendors.filter((v) => v.category.trim().toLowerCase() === wanted);
     if (matched.length > 0) {

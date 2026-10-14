@@ -12,7 +12,7 @@ export const supabase =
           // Bound each request so a hung connection fails fast (and hits
           // the retry loop in lib/vendors.ts) instead of stalling SSR.
           fetch: (input, init) =>
-            fetch(input, { ...init, signal: AbortSignal.timeout(15000) })
+            fetch(input, { ...init, signal: AbortSignal.timeout(8000) })
         }
       })
     : null;
