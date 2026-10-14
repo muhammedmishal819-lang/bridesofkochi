@@ -315,25 +315,35 @@ function sortVendors(a: Vendor, b: Vendor) {
 
 async function fromDb(category?: VendorCategory): Promise<{ vendors: Vendor[] | null; error: string | null }> {
   if (!isSupabaseConfigured || !supabase) return { vendors: null, error: "Supabase env vars missing" };
-  try {
-    let query = supabase
-      .from("vendors")
-      .select("*")
-      .order("is_featured", { ascending: false })
-      .order("rating", { ascending: false });
-    if (category) query = query.eq("category", category);
-    const { data, error } = await query;
-    if (error) {
-      console.error(`[vendors] Supabase SELECT failed${category ? ` (category=${category})` : ""}:`, error.message);
-      return { vendors: null, error: error.message };
+  const label = category ? ` (category=${category})` : "";
+  // Retry transient Vercel↔Supabase network blips; surfaced cause codes
+  // (ENOTFOUND/EAI_AGAIN = DNS, CONNECT_TIMEOUT = routing/firewall) tell us exactly why.
+  let lastError = "unknown";
+  for (let attempt = 1; attempt <= 3; attempt++) {
+    try {
+      let query = supabase
+        .from("vendors")
+        .select("*")
+        .order("is_featured", { ascending: false })
+        .order("rating", { ascending: false });
+      if (category) query = query.eq("category", category);
+      const { data, error } = await query;
+      if (error) {
+        lastError = error.message;
+        console.error(`[vendors] Supabase SELECT attempt ${attempt}${label}:`, error.message);
+      } else if (!data || data.length === 0) {
+        return { vendors: null, error: "empty" };
+      } else {
+        return { vendors: (data as Record<string, unknown>[]).map(normalizeVendor), error: null };
+      }
+    } catch (e) {
+      const cause = (e as { cause?: { code?: string; message?: string } }).cause;
+      lastError = `${e instanceof Error ? e.message : String(e)}${cause?.code ? ` [${cause.code}]` : ""}`;
+      console.error(`[vendors] Supabase fetch attempt ${attempt}${label} threw:`, lastError);
     }
-    if (!data || data.length === 0) return { vendors: null, error: "empty" };
-    return { vendors: (data as Record<string, unknown>[]).map(normalizeVendor), error: null };
-  } catch (e) {
-    const msg = e instanceof Error ? e.message : "Unknown fetch error";
-    console.error("[vendors] Supabase fetch threw:", msg);
-    return { vendors: null, error: msg };
+    if (attempt < 3) await new Promise((r) => setTimeout(r, 400 * attempt * attempt));
   }
+  return { vendors: null, error: lastError };
 }
 
 export async function getAllVendors(): Promise<Vendor[]> {

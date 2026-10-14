@@ -7,5 +7,12 @@ export const isSupabaseConfigured = Boolean(url && anon && url.includes("supabas
 
 export const supabase =
   isSupabaseConfigured
-    ? createClient(url as string, anon as string)
+    ? createClient(url as string, anon as string, {
+        global: {
+          // Bound each request so a hung connection fails fast (and hits
+          // the retry loop in lib/vendors.ts) instead of stalling SSR.
+          fetch: (input, init) =>
+            fetch(input, { ...init, signal: AbortSignal.timeout(15000) })
+        }
+      })
     : null;
