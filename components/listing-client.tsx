@@ -2,8 +2,8 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { SlidersHorizontal, Search, X, TriangleAlert, RefreshCw } from "lucide-react";
-import type { Vendor } from "@/lib/vendors";
-import { AREAS, filterVendors } from "@/lib/vendors";
+import type { Vendor, VendorCategory } from "@/lib/vendors";
+import { AREAS, fetchVendorsBrowser, filterVendors } from "@/lib/vendors";
 import VendorCard from "@/components/vendor-card";
 import { cn } from "@/lib/utils";
 
@@ -74,14 +74,42 @@ export default function ListingClient({
   vendors,
   styles,
   basePath,
-  loadError
+  category,
+  loadError: initialError
 }: {
   vendors: Vendor[];
   styles: string[];
   basePath: string;
+  category: VendorCategory;
   loadError?: string | null;
 }) {
   const router = useRouter();
+  // Self-heal: if SSR fell back to demo data, retry straight from the
+  // visitor's browser (different network path) and upgrade silently.
+  const [liveVendors, setLiveVendors] = useState<Vendor[] | null>(null);
+  const [loadError, setLoadError] = useState<string | null>(initialError ?? null);
+  const [reconnecting, setReconnecting] = useState(false);
+  useEffect(() => {
+    if (!initialError) return;
+    let alive = true;
+    setReconnecting(true);
+    fetchVendorsBrowser(category)
+      .then((rows) => {
+        if (!alive || rows.length === 0) return;
+        setLiveVendors(rows);
+        setLoadError(null);
+      })
+      .catch(() => {
+        /* keep demo data + banner */
+      })
+      .finally(() => {
+        if (alive) setReconnecting(false);
+      });
+    return () => {
+      alive = false;
+    };
+  }, [initialError, category]);
+  const displayVendors = liveVendors ?? vendors;
   // Filters render IMMEDIATELY from local state — the grid never suspends on
   // useSearchParams, so a hydration delay can no longer trap the page on a spinner.
   const [filters, setFilters] = useState<Filters>(EMPTY);
@@ -128,7 +156,7 @@ export default function ListingClient({
 
   const filtered = useMemo(
     () =>
-      filterVendors(vendors, {
+      filterVendors(displayVendors, {
         q: filters.q,
         areas: filters.areas,
         budgets: filters.budgets,
@@ -136,7 +164,7 @@ export default function ListingClient({
         minRating: filters.minRating,
         featuredOnly: filters.featuredOnly
       }),
-    [vendors, filters]
+    [displayVendors, filters]
   );
 
   const activeCount =
@@ -257,7 +285,7 @@ export default function ListingClient({
                 onClick={() => window.location.reload()}
                 className="mt-2 flex items-center gap-1.5 rounded-full bg-amber-900 px-3.5 py-1.5 text-[12px] font-bold text-white hover:bg-black"
               >
-                <RefreshCw size={13} /> Retry live data
+                <RefreshCw size={13} /> {reconnecting ? "Retrying live data…" : "Retry live data"}
               </button>
             </div>
           </div>
@@ -293,8 +321,7 @@ export default function ListingClient({
           Showing <b className="text-neutral-900">{filtered.length}</b> vendor{filtered.length !== 1 && "s"}
           {filters.q && <> for “{filters.q}”</>}
         </p>
-        {vendors.length === 0 ? (
-          <div className="mt-6 rounded-2xl border border-red-200 bg-red-50 p-12 text-center">
+        {displayVendors.length === 0 ? (          <div className="mt-6 rounded-2xl border border-red-200 bg-red-50 p-12 text-center">
             <p className="font-bold text-red-900">We couldn&apos;t load any vendors</p>
             <p className="mx-auto mt-1 max-w-md text-sm text-red-700">
               {loadError

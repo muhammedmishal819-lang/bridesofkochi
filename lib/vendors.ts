@@ -443,3 +443,32 @@ export function filterVendors(
     })
     .sort((a, b) => Number(b.is_featured) - Number(a.is_featured) || b.rating - a.rating);
 }
+
+/**
+ * Browser-side fetch of one category straight from Supabase REST.
+ * Used as a self-healing second chance: if the server (Vercel) cannot reach
+ * Supabase but the visitor's browser can, the listing upgrades itself from
+ * demo data to live data a moment after page load. The anon key is public
+ * by design and RLS still enforces read-only access.
+ */
+export async function fetchVendorsBrowser(cat: VendorCategory): Promise<Vendor[]> {
+  const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
+  const anon = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
+  if (!url || !anon) throw new Error("Supabase env vars missing in browser");
+  const qs = new URLSearchParams({
+    select: "*",
+    category: `eq.${cat}`,
+    order: "is_featured.desc,rating.desc"
+  });
+  const res = await fetch(`${url}/rest/v1/vendors?${qs.toString()}`, {
+    headers: { apikey: anon, Authorization: `Bearer ${anon}` },
+    signal: AbortSignal.timeout(10000)
+  });
+  if (!res.ok) throw new Error(`Supabase HTTP ${res.status}`);
+  const rows = (await res.json()) as Record<string, unknown>[];
+  const wanted = cat.trim().toLowerCase();
+  return rows
+    .map(normalizeVendor)
+    .filter((v) => v.category.trim().toLowerCase() === wanted)
+    .sort(sortVendors);
+}

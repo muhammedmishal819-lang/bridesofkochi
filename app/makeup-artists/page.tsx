@@ -36,6 +36,7 @@ export default async function MakeupPage() {
             vendors={vendors}
             styles={["HD", "Airbrush", "Natural"]}
             basePath="/makeup-artists"
+            category="makeup_artist"
             loadError={loadError}
           />
         </div>

@@ -36,6 +36,7 @@ export default async function PhotographersPage() {
             vendors={vendors}
             styles={["Candid", "Traditional", "Cinematic"]}
             basePath="/photographers"
+            category="photographer"
             loadError={loadError}
           />
         </div>
