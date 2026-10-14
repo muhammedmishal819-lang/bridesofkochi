@@ -89,6 +89,7 @@ export default function ListingClient({
   const [liveVendors, setLiveVendors] = useState<Vendor[] | null>(null);
   const [loadError, setLoadError] = useState<string | null>(initialError ?? null);
   const [reconnecting, setReconnecting] = useState(false);
+  const [browserError, setBrowserError] = useState<string | null>(null);
   useEffect(() => {
     if (!initialError) return;
     let alive = true;
@@ -99,8 +100,8 @@ export default function ListingClient({
         setLiveVendors(rows);
         setLoadError(null);
       })
-      .catch(() => {
-        /* keep demo data + banner */
+      .catch((e) => {
+        if (alive) setBrowserError(e instanceof Error ? e.message : String(e));
       })
       .finally(() => {
         if (alive) setReconnecting(false);
@@ -281,6 +282,11 @@ export default function ListingClient({
                   : "Supabase returned no rows for this category (RLS policy may block public SELECT) or env vars are missing."}{" "}
                 Run the RLS fix in Supabase SQL Editor, then refresh.
               </p>
+              {!reconnecting && browserError && (
+                <p className="mt-1 text-amber-800">
+                  Browser retry also failed: {browserError}. Try incognito (no extensions) or another network.
+                </p>
+              )}
               <button
                 onClick={() => window.location.reload()}
                 className="mt-2 flex items-center gap-1.5 rounded-full bg-amber-900 px-3.5 py-1.5 text-[12px] font-bold text-white hover:bg-black"
