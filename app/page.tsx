@@ -5,15 +5,15 @@ import Header from "@/components/header";
 import Footer from "@/components/footer";
 import VendorCard from "@/components/vendor-card";
 import { HeroSearch, TrustBar, CtaCards } from "@/components/home-blocks";
-import { getFeaturedVendors } from "@/lib/vendors";
+import { getFeaturedVendors, getVendorCounts } from "@/lib/vendors";
 
 export const metadata: Metadata = {
   title: "Best Wedding Photographers & Makeup Artists in Kochi",
-  description: "Verified list of 60+ top wedding photographers & bridal makeup artists in Kochi with price, portfolio & direct WhatsApp contact."
+  description: "Verified list of top wedding photographers & bridal makeup artists in Kochi with price, portfolio & direct WhatsApp contact."
 };
 
 export default async function Home() {
-  const featured = await getFeaturedVendors(6);
+  const [featured, counts] = await Promise.all([getFeaturedVendors(6), getVendorCounts()]);
   return (
     <>
       <Header />
@@ -27,12 +27,19 @@ export default async function Home() {
               Find Best Wedding Photographers & Makeup Artists in Kochi
             </h1>
             <p className="mx-auto mt-4 max-w-xl text-[15px] leading-relaxed text-neutral-500">
-              Verified list of 60+ top vendors with price, portfolio & direct WhatsApp contact. No brokers, no spam — chat directly.
+              Verified list of {counts.total}+ top vendors with price, portfolio & direct WhatsApp contact. No brokers, no spam — chat directly.
             </p>
           </div>
           <HeroSearch />
           <TrustBar />
           <CtaCards />
+          <div className="mx-auto mt-6 flex max-w-2xl flex-wrap items-center justify-center gap-x-5 gap-y-1.5 text-[13px] font-medium text-neutral-500">
+            <span><b className="text-neutral-900">{counts.total}+</b> verified vendors</span>
+            <span className="h-1 w-1 rounded-full bg-neutral-300" />
+            <span><b className="text-neutral-900">{counts.areas}</b> Kochi areas</span>
+            <span className="h-1 w-1 rounded-full bg-neutral-300" />
+            <span><b className="text-neutral-900">{counts.avgRating.toFixed(1)}★</b> average rating</span>
+          </div>
         </section>
 
         <section className="mx-auto max-w-6xl px-4 pt-14 sm:px-6">

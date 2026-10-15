@@ -45,7 +45,7 @@ export default async function VendorPage({ params }: { params: { slug: string } 
   return (
     <>
       <Header />
-      <main className="mx-auto max-w-6xl flex-1 px-4 pt-6 sm:px-6">
+      <main className="mx-auto max-w-6xl flex-1 px-4 pt-6 pb-28 sm:px-6 lg:pb-6">
         <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: JSON.stringify(jsonLd) }} />
         <Link href={vendor.category === "photographer" ? "/photographers" : "/makeup-artists"} className="inline-flex items-center gap-1.5 text-[13px] font-medium text-neutral-500 hover:text-neutral-900">
           <ArrowLeft size={15} /> Back to {vendor.category === "photographer" ? "photographers" : "makeup artists"}
@@ -133,6 +133,30 @@ export default async function VendorPage({ params }: { params: { slug: string } 
           </section>
         )}
       </main>
+      {/* Sticky mobile contact bar: price + WhatsApp + Call */}
+      <div className="fixed inset-x-0 bottom-0 z-40 border-t border-neutral-100 bg-white/95 px-4 pt-2.5 backdrop-blur lg:hidden" style={{ paddingBottom: "max(0.75rem, env(safe-area-inset-bottom))" }}>
+        <div className="mx-auto flex max-w-6xl items-center gap-2.5">
+          <div className="min-w-0 flex-1">
+            <p className="text-[11px] font-semibold uppercase tracking-wide text-neutral-400">Starts at</p>
+            <p className="truncate text-lg font-bold leading-tight">{formatINR(vendor.starting_price)}</p>
+          </div>
+          <a
+            href={`tel:+91${vendor.whatsapp_number.replace(/\D/g, "").replace(/^91/, "")}`}
+            className="flex items-center gap-1.5 rounded-xl border border-neutral-200 px-4 py-3 text-sm font-bold"
+            aria-label="Call vendor"
+          >
+            <Phone size={17} />
+          </a>
+          <a
+            href={whatsappLink(vendor.name, vendor.whatsapp_number)}
+            target="_blank"
+            rel="noreferrer"
+            className="flex flex-[2] items-center justify-center gap-2 rounded-xl bg-green-600 py-3 text-sm font-bold text-white"
+          >
+            <MessageCircle size={17} /> WhatsApp
+          </a>
+        </div>
+      </div>
       <Footer />
     </>
   );

@@ -400,6 +400,28 @@ export async function getVendorsByCategorySafe(cat: VendorCategory): Promise<Cat
   return { vendors: demo, error: reason === "rls-or-empty" && direct.error ? `db-error: ${direct.error}` : reason, source: "demo" };
 }
 
+export type VendorCounts = {
+  total: number;
+  photographers: number;
+  makeupArtists: number;
+  areas: number;
+  avgRating: number;
+};
+
+/** Single-fetch counts for honest, dynamic numbers across the site. */
+export async function getVendorCounts(): Promise<VendorCounts> {
+  const all = await getAllVendors();
+  const areas = new Set(all.map((v) => v.area));
+  const avg = all.length ? all.reduce((s, v) => s + v.rating, 0) / all.length : 0;
+  return {
+    total: all.length,
+    photographers: all.filter((v) => v.category === "photographer").length,
+    makeupArtists: all.filter((v) => v.category === "makeup_artist").length,
+    areas: areas.size,
+    avgRating: Math.round(avg * 10) / 10
+  };
+}
+
 export async function getFeaturedVendors(limit = 6): Promise<Vendor[]> {
   const all = await getAllVendors();
   const f = all.filter((v) => v.is_featured);
